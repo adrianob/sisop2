@@ -11,6 +11,14 @@
 
 #define	INVALID_PTR	-1
 
+#define ERROR -1
+#define SUCCESS 0
+
+#include <string.h>
+#include <stdlib.h>
+#include "apidisk.h"
+#include "bitmap2.h"
+
 typedef int FILE2;
 typedef int DIR2;
 

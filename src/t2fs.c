@@ -7,14 +7,34 @@
 #include <stdlib.h>
 
 #define ERROR -1
+typedef enum { false, true } bool;
 
-int main(int argc, const char *argv[])
+static int initialized = false;
+
+typedef struct {
+  struct t2fs_record record;
+  bool occupied;
+  unsigned int offset;
+} OPEN_RECORD;
+
+OPEN_RECORD open_records[20];
+struct t2fs_superbloco superbloco;
+unsigned int first_inode_block;
+unsigned int first_data_block;
+unsigned int block_size;
+unsigned int record_size = 64;
+
+static void init()
 {
-  struct t2fs_superbloco superbloco;
+  if(initialized){
+    return;
+  }else {
+    initialized = true;
+  }
   char *superblock_buffer = malloc(SECTOR_SIZE);
   if(!superblock_buffer){
    printf("falha malloc");
-   return 0;
+   return;
   }
   int return_code;
   return_code = read_sector(0, (unsigned char *)superblock_buffer);
@@ -31,14 +51,27 @@ int main(int argc, const char *argv[])
   memcpy(&superbloco.blockSize, superblock_buffer + 14, sizeof(superbloco.blockSize));
   memcpy(&superbloco.diskSize, superblock_buffer + 16, sizeof(superbloco.diskSize));
 
+  first_inode_block = superbloco.superblockSize + 
+		      superbloco.freeInodeBitmapSize +
+                      superbloco.freeBlocksBitmapSize;
+  first_data_block = first_inode_block + superbloco.inodeAreaSize;
+  block_size = superbloco.blockSize;
+
   return_code = read_sector(1, (unsigned char *)superblock_buffer);
   if(return_code != 0){
      printf("erro na leitura");
   }
-  printf("%.*s\n", 4, superbloco.id);
-  printf("%02x\n", superbloco.version);
-  printf("%d\n", getBitmap2(BITMAP_DADOS, 10));
+  //printf("%.*s\n", 4, superbloco.id);
+  //printf("%02x\n", superbloco.version);
+  //printf("%d\n", getBitmap2(BITMAP_DADOS, 10));
+  /*
+  int handle =  opendir2("/");
+  printf("handle %d\n", handle);
+  DIRENT2 *dir = malloc(sizeof(DIRENT2));
+  readdir2(handle, dir);
+  readdir2(handle, dir);
   return 0;
+*/
 }
 
 /*-----------------------------------------------------------------------------
@@ -75,6 +108,7 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o handle d
 	Em caso de erro, deve ser retornado um valor negativo.
 -----------------------------------------------------------------------------*/
 FILE2 create2 (char *filename){
+  init();
   return ERROR;
 }
 
@@ -89,6 +123,7 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 	Em caso de erro, será retornado um valor diferente de zero.
 -----------------------------------------------------------------------------*/
 int delete2 (char *filename){
+  init();
   return ERROR;
 }
 
@@ -108,6 +143,8 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o handle d
 	Em caso de erro, deve ser retornado um valor negativo
 -----------------------------------------------------------------------------*/
 FILE2 open2 (char *filename){
+  init();
+  printf("%d", first_inode_block);
   return ERROR;
 }
 
@@ -121,6 +158,7 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 	Em caso de erro, será retornado um valor diferente de zero.
 -----------------------------------------------------------------------------*/
 int close2 (FILE2 handle){
+  init();
   return ERROR;
 }
 
@@ -139,6 +177,7 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o número 
 	Em caso de erro, será retornado um valor negativo.
 -----------------------------------------------------------------------------*/
 int read2 (FILE2 handle, char *buffer, int size){
+  init();
   return ERROR;
 }
 
@@ -250,7 +289,37 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o identifi
 	Em caso de erro, será retornado um valor negativo.
 -----------------------------------------------------------------------------*/
 DIR2 opendir2 (char *pathname){
-  return ERROR;
+  init();
+  int handle = 0;
+  if(strcmp(pathname, "/") == 0){
+    struct t2fs_record *root_record = malloc(sizeof(struct t2fs_record));
+    root_record->TypeVal= 2;
+    strcpy(root_record->name, "/");
+    root_record->inodeNumber = 0;
+
+    OPEN_RECORD *new_record = malloc(sizeof(OPEN_RECORD));
+    new_record->record = *root_record;
+    new_record->occupied = true;
+    new_record->offset = 0;
+    open_records[handle] = *new_record;
+  }
+
+  //64 bytes later
+
+  //read data from register
+/*
+  struct t2fs_inode *file_inode = malloc(sizeof(struct t2fs_inode));
+  read_sector(first_inode_block, buffer);
+  memcpy(file_inode, buffer+sizeof(struct t2fs_inode), sizeof(struct t2fs_inode));
+  int file_data_pointer = file_inode->dataPtr[0];
+  printf("data pointer %d\n", file_data_pointer);
+  read_sector(first_data_block + (file_data_pointer*block_size), data_buffer);
+  char *data [200];
+  memcpy(data, data_buffer, record->bytesFileSize);
+  printf("data: %s\n", data);
+*/
+
+  return handle;
 }
 
 
@@ -270,7 +339,29 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 	Em caso de erro, será retornado um valor diferente de zero ( e "dentry" não será válido)
 -----------------------------------------------------------------------------*/
 int readdir2 (DIR2 handle, DIRENT2 *dentry){
-  return ERROR;
+  init();
+  OPEN_RECORD *dir = &open_records[handle];
+
+  if(strcmp(dir->record.name, "/") == 0 ){//root
+    //read first inode
+    struct t2fs_inode *inode = malloc(sizeof(struct t2fs_inode));
+    unsigned char *buffer = malloc(SECTOR_SIZE);
+    read_sector(first_inode_block, buffer);
+    memcpy(inode, buffer, sizeof(struct t2fs_inode));
+
+    //read first register, which is the first file in the list of files of the directory
+    int first_pointer = inode->dataPtr[0];
+    unsigned char *data_buffer = malloc(SECTOR_SIZE*block_size);
+    struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+    read_sector(first_data_block + (first_pointer*block_size), data_buffer);
+    memcpy(record, data_buffer + dir->offset, sizeof(struct t2fs_record));
+    strcpy(dentry->name, record->name);
+    dentry->fileType = record->TypeVal;
+    dentry->fileSize = record->bytesFileSize;
+
+    dir->offset += record_size;
+  }
+  return 0;
 }
 
 
@@ -283,6 +374,7 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 	Em caso de erro, será retornado um valor diferente de zero.
 -----------------------------------------------------------------------------*/
 int closedir2 (DIR2 handle){
+  init();
   return ERROR;
 }
 
