@@ -355,6 +355,7 @@ int readdir2 (DIR2 handle, DIRENT2 *dentry){
     struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
     read_sector(first_data_block + (first_pointer*block_size), data_buffer);
     memcpy(record, data_buffer + dir->offset, sizeof(struct t2fs_record));
+    if(record->TypeVal != 1 && record->TypeVal != 2){return ERROR;}
     strcpy(dentry->name, record->name);
     dentry->fileType = record->TypeVal;
     dentry->fileSize = record->bytesFileSize;
