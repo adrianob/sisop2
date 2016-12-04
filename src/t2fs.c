@@ -8,6 +8,7 @@
 
 typedef enum { false, true } bool;
 struct t2fs_record * get_record_from_path(char *pathname);
+int get_handle();
 
 static int initialized = false;
 
@@ -17,6 +18,7 @@ typedef struct {
   unsigned int offset;
 } OPEN_RECORD;
 
+int MAX_RECORDS = 20;
 OPEN_RECORD open_records[20];
 struct t2fs_superbloco superbloco;
 unsigned int first_inode_block;
@@ -65,16 +67,21 @@ static void init()
   //printf("%.*s\n", 4, superbloco.id);
   //printf("%02x\n", superbloco.version);
   //printf("%d\n", getBitmap2(BITMAP_DADOS, 10));
-  /*
-  int handle =  opendir2("/");
-  printf("handle %d\n", handle);
-  DIRENT2 *dir = malloc(sizeof(DIRENT2));
-  readdir2(handle, dir);
-  readdir2(handle, dir);
-  return 0;
-*/
 }
 
+int get_handle(){
+  int i;
+  int handle = -1;
+  OPEN_RECORD handle_open_record;
+  for(i=0; i<MAX_RECORDS;i++){
+    handle_open_record = open_records[i];
+    if(!handle_open_record.occupied){
+      handle = i;
+      break;
+    }
+  }
+  return handle;
+}
 struct t2fs_record * get_record_from_path(char *pathname){
   //read first root inode
   struct t2fs_inode *inode = malloc(sizeof(struct t2fs_inode));
@@ -188,7 +195,11 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o handle d
 FILE2 open2 (char *filename){
   init();
 
-  int handle = 0;
+  int handle = get_handle();
+  if(handle == -1){//all occupied
+    return ERROR;
+  }
+
   struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
 
   OPEN_RECORD *new_record = malloc(sizeof(OPEN_RECORD));
@@ -361,7 +372,10 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o identifi
 DIR2 opendir2 (char *pathname){
   init();
 
-  int handle = 0;
+  int handle = get_handle();
+  if(handle == -1){//all occupied
+    return ERROR;
+  }
 
   if(strcmp(pathname, "/") == 0){
     struct t2fs_record *root_record = malloc(sizeof(struct t2fs_record));
@@ -384,19 +398,6 @@ DIR2 opendir2 (char *pathname){
   new_record->occupied = true;
   new_record->offset = 0;
   open_records[handle] = *new_record;
-
-  //read data from register
-/*
-  struct t2fs_inode *file_inode = malloc(sizeof(struct t2fs_inode));
-  read_sector(first_inode_block, buffer);
-  memcpy(file_inode, buffer+sizeof(struct t2fs_inode), sizeof(struct t2fs_inode));
-  int file_data_pointer = file_inode->dataPtr[0];
-  printf("data pointer %d\n", file_data_pointer);
-  read_sector(first_data_block + (file_data_pointer*block_size), data_buffer);
-  char *data [200];
-  memcpy(data, data_buffer, record->bytesFileSize);
-  printf("data: %s\n", data);
-*/
 
   return handle;
 }
