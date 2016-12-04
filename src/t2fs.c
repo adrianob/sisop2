@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 typedef enum { false, true } bool;
+struct t2fs_record * get_record_from_path(char *pathname);
 
 static int initialized = false;
 
@@ -72,6 +73,48 @@ static void init()
   readdir2(handle, dir);
   return 0;
 */
+}
+
+struct t2fs_record * get_record_from_path(char *pathname){
+  //read first root inode
+  struct t2fs_inode *inode = malloc(sizeof(struct t2fs_inode));
+  unsigned char *buffer = malloc(SECTOR_SIZE);
+  read_sector(first_inode_block, buffer);
+  memcpy(inode, buffer, sizeof(struct t2fs_inode));
+
+  int offset = 0;
+  char *current_path;
+  const char separator[2] = "/";
+  
+  /* get the first token */
+  current_path = strtok(pathname, separator);
+  
+  struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+  /* walk through other tokens */
+  while( current_path != NULL ) 
+  {
+    while(true){
+      //read first register, which is the first file in the list of files of the directory
+      int first_pointer = inode->dataPtr[0];
+      unsigned char *data_buffer = malloc(SECTOR_SIZE*block_size);
+
+      read_sector(first_data_block + (first_pointer*block_size), data_buffer);
+      memcpy(record, data_buffer + offset, sizeof(struct t2fs_record));
+      if(record->TypeVal != 1 && record->TypeVal != 2){return ERROR;}
+      if(strcmp(record->name, current_path) == 0){//found the record
+        int block = (int)((record->inodeNumber * inode_size)/SECTOR_SIZE);
+	read_sector(first_inode_block + block, buffer);
+	memcpy(inode, buffer + (record->inodeNumber * inode_size), sizeof(struct t2fs_inode));
+        offset = 0;
+        break;
+      } 
+      else{
+        offset += record_size;
+      }
+    }
+    current_path = strtok(NULL, separator);
+  }
+  return record;
 }
 
 /*-----------------------------------------------------------------------------
@@ -144,8 +187,18 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o handle d
 -----------------------------------------------------------------------------*/
 FILE2 open2 (char *filename){
   init();
-  printf("%d", first_inode_block);
-  return ERROR;
+
+  int handle = 0;
+  struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+
+  OPEN_RECORD *new_record = malloc(sizeof(OPEN_RECORD));
+  new_record->record = *get_record_from_path(filename);
+  new_record->occupied = true;
+  new_record->offset = 0;
+  open_records[handle] = *new_record;
+
+
+  return handle;
 }
 
 
@@ -162,7 +215,6 @@ int close2 (FILE2 handle){
   return ERROR;
 }
 
-
 /*-----------------------------------------------------------------------------
 Função:	Realiza a leitura de "size" bytes do arquivo identificado por "handle".
 	Os bytes lidos são colocados na área apontada por "buffer".
@@ -178,7 +230,25 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o número 
 -----------------------------------------------------------------------------*/
 int read2 (FILE2 handle, char *buffer, int size){
   init();
-  return ERROR;
+
+  unsigned char *inode_buffer = malloc(SECTOR_SIZE);
+  unsigned char *data_buffer = malloc(SECTOR_SIZE*block_size);
+  struct t2fs_inode *data_inode = malloc(sizeof(struct t2fs_inode));
+  OPEN_RECORD *open_record = &open_records[handle];
+  struct t2fs_record record = open_record->record;
+
+  int block = (int)((record.inodeNumber * inode_size)/SECTOR_SIZE);
+  read_sector(first_inode_block + block, inode_buffer);
+  memcpy(data_inode, inode_buffer + (record.inodeNumber * inode_size), sizeof(struct t2fs_inode));
+
+  //@TODO case when file is bigger than one block
+  int file_data_pointer = data_inode->dataPtr[0];
+  read_sector(first_data_block + (file_data_pointer*block_size), data_buffer);
+
+  memcpy(buffer, data_buffer + open_record->offset, size);
+  open_record->offset += size;
+  //@TODO return only the amount of bytes read
+  return size;
 }
 
 
@@ -291,13 +361,6 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o identifi
 DIR2 opendir2 (char *pathname){
   init();
 
-  //read first inode
-  struct t2fs_inode *inode = malloc(sizeof(struct t2fs_inode));
-  unsigned char *buffer = malloc(SECTOR_SIZE);
-  read_sector(first_inode_block, buffer);
-  memcpy(inode, buffer, sizeof(struct t2fs_inode));
-  char *current_path;
-  int offset = 0;
   int handle = 0;
 
   if(strcmp(pathname, "/") == 0){
@@ -313,42 +376,14 @@ DIR2 opendir2 (char *pathname){
     open_records[handle] = *new_record;
     return handle;
   }
-  const char separator[2] = "/";
-  
-  /* get the first token */
-  current_path = strtok(pathname, separator);
-  
-  struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
-  /* walk through other tokens */
-  while( current_path != NULL ) 
-  {
-    while(true){
-      //read first register, which is the first file in the list of files of the directory
-      int first_pointer = inode->dataPtr[0];
-      unsigned char *data_buffer = malloc(SECTOR_SIZE*block_size);
 
-      read_sector(first_data_block + (first_pointer*block_size), data_buffer);
-      memcpy(record, data_buffer + offset, sizeof(struct t2fs_record));
-      if(record->TypeVal != 1 && record->TypeVal != 2){return ERROR;}
-      if(strcmp(record->name, current_path) == 0){
-	read_sector(first_inode_block, buffer);
-	memcpy(inode, buffer + (record->inodeNumber * inode_size), sizeof(struct t2fs_inode));
-        offset = 0;
-        break;
-      } 
-      else{
-        offset += record_size;
-      }
-    }
-    current_path = strtok(NULL, separator);
-  }
+  struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
 
   OPEN_RECORD *new_record = malloc(sizeof(OPEN_RECORD));
-  new_record->record = *record;
+  new_record->record = *get_record_from_path(pathname);
   new_record->occupied = true;
   new_record->offset = 0;
   open_records[handle] = *new_record;
-  return handle;
 
   //read data from register
 /*
