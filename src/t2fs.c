@@ -298,8 +298,8 @@ FILE2 create2 (char *filename){
       record->TypeVal = 1;
       record->blocksFileSize = 0;
       record->bytesFileSize = 0;
-      record->bytesFileSize = 0;
-      record->inodeNumber = -1;
+      record->inodeNumber = searchBitmap2(BITMAP_INODE, 0);
+      setBitmap2(BITMAP_INODE, record->inodeNumber, 1);
       strcpy(record->name, get_last_name(root_path));
 
       OPEN_RECORD *new_record = malloc(sizeof(OPEN_RECORD));
@@ -455,6 +455,7 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 	Em caso de erro, será retornado um valor diferente de zero.
 -----------------------------------------------------------------------------*/
 int truncate2 (FILE2 handle){
+  //@TODO free bitmaps
   init();
   OPEN_RECORD *file = &open_records[handle];
 
@@ -516,6 +517,69 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 	Em caso de erro, será retornado um valor diferente de zero.
 -----------------------------------------------------------------------------*/
 int mkdir2 (char *pathname){
+  init();
+
+  //temp string since strtok modifies the input
+  char *root_path = malloc(sizeof(char) * 256 );
+  strcpy(root_path, pathname);
+
+  struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+  //check if file already exists
+  OPEN_RECORD *temp = get_record_from_path(pathname);
+  record = &temp->record;
+  if(record->TypeVal == 1 || record->TypeVal == 2){
+    return ERROR;
+  }
+
+  int offset = 0;
+  int sector_offset;
+  bool found = false;
+  bool in_root = in_root_path(root_path);
+
+  struct t2fs_inode *inode;
+  unsigned char *buffer;
+  //@TODO refactor
+  if(in_root){
+    //read first inode
+    inode = malloc(sizeof(struct t2fs_inode));
+    buffer = malloc(SECTOR_SIZE);
+    read_sector(first_inode_block, buffer);
+    memcpy(inode, buffer, sizeof(struct t2fs_inode));
+  }else{
+    struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+    record = get_last_record(root_path);
+
+    inode = malloc(sizeof(struct t2fs_inode));
+    buffer = malloc(SECTOR_SIZE);
+    int sector = (int)((record->inodeNumber * inode_size)/SECTOR_SIZE);
+    read_sector(first_inode_block + sector, buffer);
+    memcpy(inode, buffer + (record->inodeNumber * inode_size), sizeof(struct t2fs_inode));
+  }
+
+  int first_pointer = inode->dataPtr[0];
+
+  while(!found){
+    unsigned char *data_buffer = malloc(SECTOR_SIZE);
+    struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+    sector_offset = (int) (offset/SECTOR_SIZE);
+    read_sector(first_data_block + (first_pointer*block_size) + sector_offset, data_buffer);
+    memcpy(record, data_buffer + offset - (sector_offset * SECTOR_SIZE), sizeof(struct t2fs_record));
+    if(record->TypeVal != 1 && record->TypeVal != 2){//found invalid file, append new file
+      found = true;
+      record->TypeVal = 2;
+      record->blocksFileSize = 0;
+      record->bytesFileSize = 0;
+      record->inodeNumber = searchBitmap2(BITMAP_INODE, 0);
+      setBitmap2(BITMAP_INODE, record->inodeNumber, 1);
+      strcpy(record->name, get_last_name(root_path));
+
+      memcpy(data_buffer + offset - (sector_offset * SECTOR_SIZE), record, record_size);
+      write_sector(first_data_block + (first_pointer*block_size) + sector_offset, data_buffer);
+      return SUCCESS;
+    }
+    offset += record_size;
+  } 
+
   return ERROR;
 }
 
