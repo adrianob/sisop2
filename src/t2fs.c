@@ -253,85 +253,55 @@ FILE2 create2 (char *filename){
   bool found = false;
   bool in_root = in_root_path(root_path);
 
+  struct t2fs_inode *inode;
+  unsigned char *buffer;
   if(in_root){
     //read first inode
-    struct t2fs_inode *inode = malloc(sizeof(struct t2fs_inode));
-    unsigned char *buffer = malloc(SECTOR_SIZE);
+    inode = malloc(sizeof(struct t2fs_inode));
+    buffer = malloc(SECTOR_SIZE);
     read_sector(first_inode_block, buffer);
     memcpy(inode, buffer, sizeof(struct t2fs_inode));
+  }else{
+    struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+    record = get_last_record(root_path);
 
-    int first_pointer = inode->dataPtr[0];
-
-    while(!found){
-      unsigned char *data_buffer = malloc(SECTOR_SIZE);
-      struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
-      sector_offset = (int) (offset/SECTOR_SIZE);
-      read_sector(first_data_block + (first_pointer*block_size) + sector_offset, data_buffer);
-      memcpy(record, data_buffer + offset - (sector_offset * SECTOR_SIZE), sizeof(struct t2fs_record));
-      if(record->TypeVal != 1 && record->TypeVal != 2){//found invalid file, append new file
-        found = true;
-	record->TypeVal = 1;
-        record->blocksFileSize = 0;
-        record->bytesFileSize = 0;
-        record->bytesFileSize = 0;
-        record->inodeNumber = -1;
-        strcpy(record->name, get_last_name(root_path));
-
-        OPEN_RECORD *new_record = malloc(sizeof(OPEN_RECORD));
-        new_record->record = *record;
-        new_record->occupied = true;
-        new_record->offset = 0;
-        open_records[handle] = *new_record;
-        memcpy(data_buffer + offset - (sector_offset * SECTOR_SIZE), record, record_size);
-        write_sector(first_data_block + (first_pointer*block_size) + sector_offset, data_buffer);
-        return handle;
-      }
-      offset += record_size;
-    } 
-
-    return ERROR;
-  }else {
-      struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
-      record = get_last_record(root_path);
-
-      struct t2fs_inode *inode = malloc(sizeof(struct t2fs_inode));
-      unsigned char *buffer = malloc(SECTOR_SIZE);
-      int sector = (int)((record->inodeNumber * inode_size)/SECTOR_SIZE);
-      read_sector(first_inode_block + sector, buffer);
-      memcpy(inode, buffer + (record->inodeNumber * inode_size), sizeof(struct t2fs_inode));
-
-      int first_pointer = inode->dataPtr[0];
-
-    //@TODO refactor
-      while(!found){
-        unsigned char *data_buffer = malloc(SECTOR_SIZE);
-        struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
-        sector_offset = (int) (offset/SECTOR_SIZE);
-        read_sector(first_data_block + (first_pointer*block_size) + sector_offset, data_buffer);
-        memcpy(record, data_buffer + offset - (sector_offset * SECTOR_SIZE), sizeof(struct t2fs_record));
-        if(record->TypeVal != 1 && record->TypeVal != 2){//found invalid file, append new file
-          found = true;
-	  record->TypeVal = 1;
-          record->blocksFileSize = 0;
-          record->bytesFileSize = 0;
-          record->bytesFileSize = 0;
-          record->inodeNumber = -1;
-          strcpy(record->name, get_last_name(root_path));
-
-          OPEN_RECORD *new_record = malloc(sizeof(OPEN_RECORD));
-          new_record->record = *record;
-          new_record->occupied = true;
-          new_record->offset = 0;
-          open_records[handle] = *new_record;
-          memcpy(data_buffer + offset - (sector_offset * SECTOR_SIZE), record, record_size);
-          write_sector(first_data_block + (first_pointer*block_size) + sector_offset, data_buffer);
-          return handle;
-        }
-        offset += record_size;
-      }
+    inode = malloc(sizeof(struct t2fs_inode));
+    buffer = malloc(SECTOR_SIZE);
+    int sector = (int)((record->inodeNumber * inode_size)/SECTOR_SIZE);
+    read_sector(first_inode_block + sector, buffer);
+    memcpy(inode, buffer + (record->inodeNumber * inode_size), sizeof(struct t2fs_inode));
   }
 
-  return handle;
+  int first_pointer = inode->dataPtr[0];
+
+  while(!found){
+    unsigned char *data_buffer = malloc(SECTOR_SIZE);
+    struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+    sector_offset = (int) (offset/SECTOR_SIZE);
+    read_sector(first_data_block + (first_pointer*block_size) + sector_offset, data_buffer);
+    memcpy(record, data_buffer + offset - (sector_offset * SECTOR_SIZE), sizeof(struct t2fs_record));
+    if(record->TypeVal != 1 && record->TypeVal != 2){//found invalid file, append new file
+      found = true;
+      record->TypeVal = 1;
+      record->blocksFileSize = 0;
+      record->bytesFileSize = 0;
+      record->bytesFileSize = 0;
+      record->inodeNumber = -1;
+      strcpy(record->name, get_last_name(root_path));
+
+      OPEN_RECORD *new_record = malloc(sizeof(OPEN_RECORD));
+      new_record->record = *record;
+      new_record->occupied = true;
+      new_record->offset = 0;
+      open_records[handle] = *new_record;
+      memcpy(data_buffer + offset - (sector_offset * SECTOR_SIZE), record, record_size);
+      write_sector(first_data_block + (first_pointer*block_size) + sector_offset, data_buffer);
+      return handle;
+    }
+    offset += record_size;
+  } 
+
+  return ERROR;
 }
 
 
