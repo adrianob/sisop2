@@ -186,6 +186,7 @@ OPEN_RECORD * get_record_from_path(char *pathname){
   memcpy(inode, buffer, sizeof(struct t2fs_inode));
 
   int offset = 0;
+  int last_offset = 0;
   char *current_path;
   const char separator[2] = "/";
   int sector_offset;
@@ -200,7 +201,7 @@ OPEN_RECORD * get_record_from_path(char *pathname){
   {
     while(true){
       //read first register, which is the first file in the list of files of the directory
-      int first_pointer = inode->dataPtr[0];
+      first_pointer = inode->dataPtr[0];
       unsigned char *data_buffer = malloc(SECTOR_SIZE*block_size);
       sector_offset = (int) (offset/SECTOR_SIZE);
 
@@ -218,6 +219,7 @@ OPEN_RECORD * get_record_from_path(char *pathname){
       } 
       else{
         offset += record_size;
+        last_offset = offset;
       }
     }
     current_path = strtok(NULL, separator);
@@ -227,7 +229,7 @@ OPEN_RECORD * get_record_from_path(char *pathname){
   new_record->record = *record;
   new_record->occupied = true;
   new_record->initial_sector = first_data_block + (first_pointer*block_size) + sector_offset;
-  new_record->sector_offset = offset - (sector_offset * SECTOR_SIZE);
+  new_record->sector_offset = last_offset - (sector_offset * SECTOR_SIZE);
   new_record->offset = 0;
   return new_record;
 }
@@ -246,7 +248,7 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 	Em caso de erro, será retornado um valor diferente de zero.
 -----------------------------------------------------------------------------*/
 int identify2 (char *name, int size){
-  char *ident = "Adriano Benin (173464) - Lucas Valandro () - Gabriel Zilmer ()";
+  char *ident = "Adriano Benin (173464) - Lucas Valandro () - Gabriel Zillmer ()";
   memcpy(name, ident, size);
   return 0;
 }
@@ -335,7 +337,37 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 -----------------------------------------------------------------------------*/
 int delete2 (char *filename){
   init();
-  return ERROR;
+
+  //temp string since strtok modifies the input
+  char *root_path = malloc(sizeof(char) * 256 );
+  strcpy(root_path, filename);
+
+  struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+  //check if file exists
+  OPEN_RECORD *temp = get_record_from_path(filename);
+  record = &temp->record;
+  if(record->TypeVal != 1 && record->TypeVal != 2){
+    return ERROR;
+  }
+  record->TypeVal = 0;//mark file as invalid
+  //set bitmaps to zero
+  setBitmap2(BITMAP_INODE, record->inodeNumber, 0);
+  struct t2fs_inode *inode = get_first_inode(root_path);
+  int first_pointer = inode->dataPtr[0];
+  int second_pointer = inode->dataPtr[1];
+  setBitmap2(BITMAP_DADOS, first_pointer, 0);
+  if(second_pointer != INVALID_PTR){
+    setBitmap2(BITMAP_DADOS, second_pointer, 0);
+  }
+
+  //write updated record to disk
+  unsigned char *data_buffer = malloc(SECTOR_SIZE);
+  read_sector(temp->initial_sector, data_buffer);
+  //printf("entrou %d\n", temp->sector_offset);
+  memcpy(data_buffer + temp->sector_offset, record, record_size);
+  write_sector(temp->initial_sector, data_buffer);
+
+  return SUCCESS;
 }
 
 
@@ -689,6 +721,7 @@ int readdir2 (DIR2 handle, DIRENT2 *dentry){
   read_sector(first_data_block + (first_pointer*block_size) + sector_offset, data_buffer);
   memcpy(record, data_buffer + dir->offset - (sector_offset * SECTOR_SIZE), sizeof(struct t2fs_record));
   if(record->TypeVal != 1 && record->TypeVal != 2){return ERROR;}
+
   strcpy(dentry->name, record->name);
   dentry->fileType = record->TypeVal;
   dentry->fileSize = record->bytesFileSize;
