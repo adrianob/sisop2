@@ -17,6 +17,7 @@ typedef struct {
 
 OPEN_RECORD * get_record_from_path(char *pathname);
 struct t2fs_inode * get_first_inode(root_path);
+char * get_last_path(char *pathname);
 bool in_root_path(char *pathname);
 char * get_last_name(char *pathname);
 struct t2fs_record * get_last_record(char *pathname);
@@ -88,7 +89,8 @@ int get_handle(){
   return handle;
 }
 
-struct t2fs_record * get_last_record(char *pathname){
+//ex: /a/b/c will return /a/b
+char * get_last_path(char *pathname){
   char *name = malloc(sizeof(char) * 256 );
   strcpy(name, pathname);
 
@@ -110,10 +112,18 @@ struct t2fs_record * get_last_record(char *pathname){
       strcat(last_path, temp_path);
     }
   }
-  OPEN_RECORD *temp = get_record_from_path(last_path);
+  return last_path;
+}
+
+//ex: /a/b/c will return the record for /a/b
+struct t2fs_record * get_last_record(char *pathname){
+  char *name = malloc(sizeof(char) * 256 );
+  strcpy(name, pathname);
+  OPEN_RECORD *temp = get_record_from_path(get_last_path(name));
   return &temp->record;
 }
 
+//ex: /a/b/c will return c
 char * get_last_name(char *pathname){
   char *name = malloc(sizeof(char) * 256 );
   strcpy(name, pathname);
@@ -134,6 +144,8 @@ char * get_last_name(char *pathname){
   return last_path;
 }
 
+//get the first inode for the given path
+//root path will return inode zero, other paths will return the inode in inodeNumber
 struct t2fs_inode * get_first_inode(root_path){
   bool in_root = in_root_path(root_path);
 
@@ -158,6 +170,7 @@ struct t2fs_inode * get_first_inode(root_path){
   return inode;
 }
 
+//check if the file is in the root directory
 bool in_root_path(char *pathname){
   char *name = malloc(sizeof(char) * 256 );
   strcpy(name, pathname);
@@ -178,6 +191,7 @@ bool in_root_path(char *pathname){
   return i == 1;
 }
 
+//return an open_record from given path
 OPEN_RECORD * get_record_from_path(char *pathname){
   //read first root inode
   struct t2fs_inode *inode = malloc(sizeof(struct t2fs_inode));
@@ -360,12 +374,48 @@ int delete2 (char *filename){
     setBitmap2(BITMAP_DADOS, second_pointer, 0);
   }
 
-  //write updated record to disk
-  unsigned char *data_buffer = malloc(SECTOR_SIZE);
-  read_sector(temp->initial_sector, data_buffer);
-  //printf("entrou %d\n", temp->sector_offset);
-  memcpy(data_buffer + temp->sector_offset, record, record_size);
-  write_sector(temp->initial_sector, data_buffer);
+  //get last record on dir
+  DIR2 d;
+  d = opendir2(get_last_path(root_path));
+  DIRENT2 *dentry = malloc(sizeof(DIRENT2));
+  bool should_append = true;
+  while ( readdir2(d, dentry) == 0 );
+  char *last_path = malloc(sizeof(char) * 256 );
+  if(strcmp(get_last_path(root_path), "") == 0){
+    should_append = false;
+  }
+  strcat(last_path,get_last_path(root_path));
+  if(should_append){
+    strcat(last_path,"/");
+  }
+
+  strcat(last_path,dentry->name);
+
+  closedir2(d);
+
+  struct t2fs_record *last_record = malloc(sizeof(struct t2fs_record));
+  OPEN_RECORD *last_open = get_record_from_path(last_path);
+  last_record = &last_open->record;
+  //file is not the last in dir, switch places
+  if(strcmp(filename, last_path) != 0){
+    //write last one in place of deleted file
+    unsigned char *data_buffer = malloc(SECTOR_SIZE);
+    read_sector(temp->initial_sector, data_buffer);
+    memcpy(data_buffer + temp->sector_offset, last_record, record_size);
+    write_sector(temp->initial_sector, data_buffer);
+    //clear last file
+    last_record->TypeVal = 0;
+    unsigned char *buffer = malloc(SECTOR_SIZE);
+    read_sector(last_open->initial_sector, buffer);
+    memcpy(buffer + last_open->sector_offset, last_record, record_size);
+    write_sector(last_open->initial_sector, buffer);
+  } else {
+    //write updated record to disk
+    unsigned char *data_buffer = malloc(SECTOR_SIZE);
+    read_sector(temp->initial_sector, data_buffer);
+    memcpy(data_buffer + temp->sector_offset, record, record_size);
+    write_sector(temp->initial_sector, data_buffer);
+  }
 
   return SUCCESS;
 }
