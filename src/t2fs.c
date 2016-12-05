@@ -22,8 +22,6 @@ struct t2fs_record * get_last_record(char *pathname);
 int get_handle();
 
 static int initialized = false;
-
-
 int MAX_RECORDS = 20;
 OPEN_RECORD open_records[20];
 struct t2fs_superbloco superbloco;
@@ -707,6 +705,8 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 -----------------------------------------------------------------------------*/
 int closedir2 (DIR2 handle){
   init();
-  return ERROR;
+  OPEN_RECORD *dir = &open_records[handle];
+  dir->occupied = false;
+  return SUCCESS;
 }
 
