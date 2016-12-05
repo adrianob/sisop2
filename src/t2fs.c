@@ -16,6 +16,7 @@ typedef struct {
 } OPEN_RECORD;
 
 OPEN_RECORD * get_record_from_path(char *pathname);
+struct t2fs_inode * get_first_inode(root_path);
 bool in_root_path(char *pathname);
 char * get_last_name(char *pathname);
 struct t2fs_record * get_last_record(char *pathname);
@@ -131,6 +132,30 @@ char * get_last_name(char *pathname){
     current_path = strtok(NULL, separator);
   }
   return last_path;
+}
+
+struct t2fs_inode * get_first_inode(root_path){
+  bool in_root = in_root_path(root_path);
+
+  struct t2fs_inode *inode;
+  unsigned char *buffer;
+  buffer = malloc(SECTOR_SIZE);
+  if(in_root){
+    //read first inode
+    inode = malloc(sizeof(struct t2fs_inode));
+    read_sector(first_inode_block, buffer);
+    memcpy(inode, buffer, sizeof(struct t2fs_inode));
+  }else{
+    struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+    record = get_last_record(root_path);
+
+    inode = malloc(sizeof(struct t2fs_inode));
+    int sector = (int)((record->inodeNumber * inode_size)/SECTOR_SIZE);
+    read_sector(first_inode_block + sector, buffer);
+    memcpy(inode, buffer + (record->inodeNumber * inode_size), sizeof(struct t2fs_inode));
+  }
+
+  return inode;
 }
 
 bool in_root_path(char *pathname){
@@ -262,27 +287,8 @@ FILE2 create2 (char *filename){
   int offset = 0;
   int sector_offset;
   bool found = false;
-  bool in_root = in_root_path(root_path);
 
-  struct t2fs_inode *inode;
-  unsigned char *buffer;
-  if(in_root){
-    //read first inode
-    inode = malloc(sizeof(struct t2fs_inode));
-    buffer = malloc(SECTOR_SIZE);
-    read_sector(first_inode_block, buffer);
-    memcpy(inode, buffer, sizeof(struct t2fs_inode));
-  }else{
-    struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
-    record = get_last_record(root_path);
-
-    inode = malloc(sizeof(struct t2fs_inode));
-    buffer = malloc(SECTOR_SIZE);
-    int sector = (int)((record->inodeNumber * inode_size)/SECTOR_SIZE);
-    read_sector(first_inode_block + sector, buffer);
-    memcpy(inode, buffer + (record->inodeNumber * inode_size), sizeof(struct t2fs_inode));
-  }
-
+  struct t2fs_inode *inode = get_first_inode(root_path);
   int first_pointer = inode->dataPtr[0];
 
   while(!found){
@@ -532,28 +538,8 @@ int mkdir2 (char *pathname){
   int offset = 0;
   int sector_offset;
   bool found = false;
-  bool in_root = in_root_path(root_path);
 
-  struct t2fs_inode *inode;
-  unsigned char *buffer;
-  //@TODO refactor
-  if(in_root){
-    //read first inode
-    inode = malloc(sizeof(struct t2fs_inode));
-    buffer = malloc(SECTOR_SIZE);
-    read_sector(first_inode_block, buffer);
-    memcpy(inode, buffer, sizeof(struct t2fs_inode));
-  }else{
-    struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
-    record = get_last_record(root_path);
-
-    inode = malloc(sizeof(struct t2fs_inode));
-    buffer = malloc(SECTOR_SIZE);
-    int sector = (int)((record->inodeNumber * inode_size)/SECTOR_SIZE);
-    read_sector(first_inode_block + sector, buffer);
-    memcpy(inode, buffer + (record->inodeNumber * inode_size), sizeof(struct t2fs_inode));
-  }
-
+  struct t2fs_inode *inode = get_first_inode(root_path);
   int first_pointer = inode->dataPtr[0];
 
   while(!found){
@@ -709,4 +695,3 @@ int closedir2 (DIR2 handle){
   dir->occupied = false;
   return SUCCESS;
 }
-
