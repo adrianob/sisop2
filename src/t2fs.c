@@ -404,22 +404,39 @@ int read2 (FILE2 handle, char *buffer, int size){
   init();
 
   unsigned char *inode_buffer = malloc(SECTOR_SIZE);
-  unsigned char *data_buffer = malloc(SECTOR_SIZE*block_size);
   struct t2fs_inode *data_inode = malloc(sizeof(struct t2fs_inode));
   OPEN_RECORD *open_record = &open_records[handle];
   struct t2fs_record record = open_record->record;
 
-  int block = (int)((record.inodeNumber * inode_size)/SECTOR_SIZE);
-  read_sector(first_inode_block + block, inode_buffer);
+  int sector = (int)((record.inodeNumber * inode_size)/SECTOR_SIZE);
+  read_sector(first_inode_block + sector, inode_buffer);
   memcpy(data_inode, inode_buffer + (record.inodeNumber * inode_size), sizeof(struct t2fs_inode));
 
-  //@TODO case when file is bigger than one sector or block
-  int file_data_pointer = data_inode->dataPtr[0];
-  read_sector(first_data_block + (file_data_pointer*block_size), data_buffer);
+  int first_data_pointer = data_inode->dataPtr[0];
+  int second_data_pointer = data_inode->dataPtr[1];
+  int single_indirection_ptr = data_inode->singleIndPtr;
+  int double_indirection_ptr = data_inode->doubleIndPtr;
+  int block_size_bytes = SECTOR_SIZE*block_size;
+  int max_file_size = block_size_bytes * ((block_size_bytes/4)*(block_size_bytes/4) + (block_size_bytes/4) + 2);
+  unsigned char *data_buffer = malloc(max_file_size);
+
+  int i;
+  //read the whole first block into the buffer
+  for(i=0;i<block_size;i++){
+    read_sector(first_data_block + (first_data_pointer*block_size) + i, data_buffer + SECTOR_SIZE * i);
+  }
+
+  if(second_data_pointer != INVALID_PTR){
+    //read the whole second block into the buffer
+    for(i=0;i<block_size;i++){
+     read_sector(first_data_block + (second_data_pointer*block_size) + i, data_buffer + SECTOR_SIZE * i + (SECTOR_SIZE*block_size));
+    }
+  }
 
   if(size > (record.bytesFileSize - open_record->offset)){
     size = record.bytesFileSize - open_record->offset;
   }
+
   if((record.bytesFileSize - open_record->offset) == 0){
     return ERROR;
   }
