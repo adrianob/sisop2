@@ -467,11 +467,19 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 int close2 (FILE2 handle){
   init();
   OPEN_RECORD *file = &open_records[handle];
-  if(file->record.TypeVal == 1){//it's a file
-      file->occupied = false;
-      //@TODO uptading on disk.
+  OPEN_RECORD *open_record = &open_records[handle];
+  struct t2fs_record record = open_record->record;
+  if(handle < 20){ //valid handle
+    if(file->record.TypeVal == 1){//it's a file
+        file->occupied = false;
+        write2(handle,file,sizeof(OPEN_RECORD));
+
+    }
+   else
+    return ERROR;
   }
-  return ERROR;
+  else
+    return ERROR;
 }
 
 /*-----------------------------------------------------------------------------
@@ -546,36 +554,42 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o número 
 	Em caso de erro, será retornado um valor negativo.
 -----------------------------------------------------------------------------*/
 int write2 (FILE2 handle, char *buffer, int size){
-  if(open_records[handle].occupied == true){
-    unsigned char *inode_buffer = malloc(SECTOR_SIZE);
-    struct t2fs_inode *data_inode = malloc(sizeof(struct t2fs_inode));
-    OPEN_RECORD *open_record = &open_records[handle];
-    struct t2fs_record record = open_record->record;
+ if(open_records[handle].occupied == true){
+  init();
 
-    int sector = (int)((record.inodeNumber * inode_size)/SECTOR_SIZE);
-    read_sector(first_inode_block + sector, inode_buffer);
-    memcpy(data_inode, inode_buffer + (record.inodeNumber * inode_size), sizeof(struct t2fs_inode));
+  unsigned char *inode_buffer = malloc(SECTOR_SIZE);
+  struct t2fs_inode *data_inode = malloc(sizeof(struct t2fs_inode));
+  OPEN_RECORD *file = &open_records[handle];
+  struct t2fs_record record = file->record;
 
-    int first_data_pointer = data_inode->dataPtr[0];
-    int second_data_pointer = data_inode->dataPtr[1];
-    int single_indirection_ptr = data_inode->singleIndPtr;
-    int double_indirection_ptr = data_inode->doubleIndPtr;
-    int block_size_bytes = SECTOR_SIZE*block_size;
-    int max_file_size = block_size_bytes * ((block_size_bytes/4)*(block_size_bytes/4) + (block_size_bytes/4) + 2);
-    unsigned char *data_buffer = malloc(max_file_size);
+  int sector = (int)((record.inodeNumber * inode_size)/SECTOR_SIZE);
+  read_sector(first_inode_block + sector, inode_buffer);
+  memcpy(data_inode, inode_buffer + (record.inodeNumber * inode_size), sizeof(struct t2fs_inode));
 
-    int i;
-    //read the whole first block into the buffer
+  int first_data_pointer = data_inode->dataPtr[0];
+  int second_data_pointer = data_inode->dataPtr[1];
+  int single_indirection_ptr = data_inode->singleIndPtr;
+  int double_indirection_ptr = data_inode->doubleIndPtr;
+  int block_size_bytes = SECTOR_SIZE*block_size;
+  int max_file_size = block_size_bytes * ((block_size_bytes/4)*(block_size_bytes/4) + (block_size_bytes/4) + 2);
+  unsigned char *data_buffer = malloc(max_file_size);
+
+  int i;
+  //write the buffer into whole first block
+  for(i=0;i<block_size;i++){
+    write_sector(first_data_block + (first_data_pointer*block_size) + i, buffer + SECTOR_SIZE * i);
+  }
+ //write the buffer into whole second block
+  if(second_data_pointer != INVALID_PTR){
     for(i=0;i<block_size;i++){
-      write_sector(first_data_block + (first_data_pointer*block_size) + i, data_buffer + SECTOR_SIZE * i);
+     write_sector(first_data_block + (second_data_pointer*block_size) + i, buffer + SECTOR_SIZE * i + (SECTOR_SIZE*block_size));
     }
-
+  }
   }
   else
     return ERROR;
+
 }
-
-
 /*-----------------------------------------------------------------------------
 
 
