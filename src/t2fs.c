@@ -6,23 +6,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-typedef enum { false, true } bool;
-typedef struct {
-  struct t2fs_record record;
-  bool occupied;
-  int initial_sector;
-  int sector_offset;
-  unsigned int offset;
-} OPEN_RECORD;
-
-OPEN_RECORD * get_record_from_path(char *pathname);
-struct t2fs_inode * get_first_inode(root_path);
-char * get_last_path(char *pathname);
-bool in_root_path(char *pathname);
-char * get_last_name(char *pathname);
-struct t2fs_record * get_last_record(char *pathname);
-int get_handle();
-
 static int initialized = false;
 int MAX_RECORDS = 20;
 OPEN_RECORD open_records[20];
@@ -70,9 +53,6 @@ static void init()
   if(return_code != 0){
      printf("erro na leitura");
   }
-  //printf("%.*s\n", 4, superbloco.id);
-  //printf("%02x\n", superbloco.version);
-  //printf("%d\n", getBitmap2(BITMAP_DADOS, 10));
 }
 
 int get_handle(){
@@ -473,7 +453,7 @@ int close2 (FILE2 handle){
     if(file->record.TypeVal == 1){//it's a file
         file->occupied = false;
         write2(handle,file,sizeof(OPEN_RECORD));
-
+        return SUCCESS;
     }
    else
     return ERROR;
@@ -560,12 +540,13 @@ int write2 (FILE2 handle, char *buffer, int size){
   unsigned char *inode_buffer = malloc(SECTOR_SIZE);
   struct t2fs_inode *data_inode = malloc(sizeof(struct t2fs_inode));
   OPEN_RECORD *file = &open_records[handle];
-  struct t2fs_record record = file->record;
+  struct t2fs_record *record = &file->record;
 
-  int sector = (int)((record.inodeNumber * inode_size)/SECTOR_SIZE);
+  int sector = (int)((record->inodeNumber * inode_size)/SECTOR_SIZE);
   read_sector(first_inode_block + sector, inode_buffer);
-  memcpy(data_inode, inode_buffer + (record.inodeNumber * inode_size), sizeof(struct t2fs_inode));
+  memcpy(data_inode, inode_buffer + (record->inodeNumber * inode_size), sizeof(struct t2fs_inode));
 
+  data_inode->dataPtr[0] = searchBitmap2(BITMAP_DADOS, 0);
   int first_data_pointer = data_inode->dataPtr[0];
   int second_data_pointer = data_inode->dataPtr[1];
   int single_indirection_ptr = data_inode->singleIndPtr;
@@ -577,7 +558,10 @@ int write2 (FILE2 handle, char *buffer, int size){
   int i;
   //write the buffer into whole first block
   for(i=0;i<block_size;i++){
-    write_sector(first_data_block + (first_data_pointer*block_size) + i, buffer + SECTOR_SIZE * i);
+    read_sector(file->initial_sector + i, data_buffer + SECTOR_SIZE * i);
+    //memcpy(record, buffer, size);
+    memcpy(data_buffer + file->sector_offset, record, record_size);
+    write_sector(file->initial_sector + i, data_buffer + SECTOR_SIZE * i);
   }
  //write the buffer into whole second block
   if(second_data_pointer != INVALID_PTR){
@@ -603,7 +587,6 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 	Em caso de erro, será retornado um valor diferente de zero.
 -----------------------------------------------------------------------------*/
 int truncate2 (FILE2 handle){
-  //@TODO free bitmaps
   init();
   OPEN_RECORD *file = &open_records[handle];
 

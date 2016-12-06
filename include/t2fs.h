@@ -19,6 +19,8 @@
 #include "apidisk.h"
 #include "bitmap2.h"
 
+
+
 typedef int FILE2;
 typedef int DIR2;
 
@@ -282,5 +284,21 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero).
 -----------------------------------------------------------------------------*/
 int closedir2 (DIR2 handle);
 
+typedef enum { false, true } bool;
+typedef struct {
+  struct t2fs_record record;
+  bool occupied;
+  int initial_sector;
+  int sector_offset;
+  unsigned int offset;
+} OPEN_RECORD;
+
+OPEN_RECORD * get_record_from_path(char *pathname);
+struct t2fs_inode * get_first_inode(root_path);
+char * get_last_path(char *pathname);
+bool in_root_path(char *pathname);
+char * get_last_name(char *pathname);
+struct t2fs_record * get_last_record(char *pathname);
+int get_handle();
 
 #endif
