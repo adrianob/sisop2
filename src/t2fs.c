@@ -200,7 +200,6 @@ OPEN_RECORD * get_record_from_path(char *pathname){
   memcpy(inode, buffer, sizeof(struct t2fs_inode));
 
   int offset = 0;
-  int last_offset = 0;
   char *current_path;
   const char separator[2] = "/";
   int sector_offset;
@@ -228,12 +227,13 @@ OPEN_RECORD * get_record_from_path(char *pathname){
         int block = (int)((record->inodeNumber * inode_size)/SECTOR_SIZE);
 	read_sector(first_inode_block + block, buffer);
 	memcpy(inode, buffer + (record->inodeNumber * inode_size), sizeof(struct t2fs_inode));
-        offset = 0;
+        if(record->TypeVal == 2){
+          offset = 0;
+        }
         break;
       } 
       else{
         offset += record_size;
-        last_offset = offset;
       }
     }
     current_path = strtok(NULL, separator);
@@ -243,7 +243,7 @@ OPEN_RECORD * get_record_from_path(char *pathname){
   new_record->record = *record;
   new_record->occupied = true;
   new_record->initial_sector = first_data_block + (first_pointer*block_size) + sector_offset;
-  new_record->sector_offset = last_offset - (sector_offset * SECTOR_SIZE);
+  new_record->sector_offset = offset - (sector_offset * SECTOR_SIZE);
   new_record->offset = 0;
   return new_record;
 }
@@ -684,7 +684,82 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 	Em caso de erro, será retornado um valor diferente de zero.
 -----------------------------------------------------------------------------*/
 int rmdir2 (char *pathname){
-  return ERROR;
+  init();
+
+  //temp string since strtok modifies the input
+  char *root_path = malloc(sizeof(char) * 256 );
+  strcpy(root_path, pathname);
+
+  struct t2fs_record *record = malloc(sizeof(struct t2fs_record));
+  //check if file exists
+  OPEN_RECORD *temp = get_record_from_path(pathname);
+  record = &temp->record;
+  if(record->TypeVal != 1 && record->TypeVal != 2){
+    return ERROR;
+  }
+  record->TypeVal = 0;//mark file as invalid
+  //set bitmaps to zero
+  setBitmap2(BITMAP_INODE, record->inodeNumber, 0);
+  struct t2fs_inode *inode = get_first_inode(root_path);
+  int first_pointer = inode->dataPtr[0];
+  int second_pointer = inode->dataPtr[1];
+  setBitmap2(BITMAP_DADOS, first_pointer, 0);
+  if(second_pointer != INVALID_PTR){
+    setBitmap2(BITMAP_DADOS, second_pointer, 0);
+  }
+
+  //check if folder is empty
+  DIR2 temp_dir;
+  temp_dir = opendir2(root_path);
+  DIRENT2 *dentry_temp = malloc(sizeof(DIRENT2));
+  if ( readdir2(temp_dir, dentry_temp) == 0 ){
+    return ERROR;
+  }
+
+  //get last record on dir
+  DIR2 d;
+  d = opendir2(get_last_path(root_path));
+  DIRENT2 *dentry = malloc(sizeof(DIRENT2));
+  bool should_append = true;
+  while ( readdir2(d, dentry) == 0 );
+  char *last_path = malloc(sizeof(char) * 256 );
+  if(strcmp(get_last_path(root_path), "") == 0){
+    should_append = false;
+  }
+  strcat(last_path,get_last_path(root_path));
+  if(should_append){
+    strcat(last_path,"/");
+  }
+
+  strcat(last_path,dentry->name);
+
+  closedir2(d);
+
+  struct t2fs_record *last_record = malloc(sizeof(struct t2fs_record));
+  OPEN_RECORD *last_open = get_record_from_path(last_path);
+  last_record = &last_open->record;
+  //file is not the last in dir, switch places
+  if(strcmp(pathname, last_path) != 0){
+    //write last one in place of deleted file
+    unsigned char *data_buffer = malloc(SECTOR_SIZE);
+    read_sector(temp->initial_sector, data_buffer);
+    memcpy(data_buffer + temp->sector_offset, last_record, record_size);
+    write_sector(temp->initial_sector, data_buffer);
+    //clear last file
+    last_record->TypeVal = 0;
+    unsigned char *buffer = malloc(SECTOR_SIZE);
+    read_sector(last_open->initial_sector, buffer);
+    memcpy(buffer + last_open->sector_offset, last_record, record_size);
+    write_sector(last_open->initial_sector, buffer);
+  } else {
+    //write updated record to disk
+    unsigned char *data_buffer = malloc(SECTOR_SIZE);
+    read_sector(temp->initial_sector, data_buffer);
+    memcpy(data_buffer + temp->sector_offset, record, record_size);
+    write_sector(temp->initial_sector, data_buffer);
+  }
+
+  return SUCCESS;
 }
 
 
