@@ -473,7 +473,7 @@ int close2 (FILE2 handle){
     if(file->record.TypeVal == 1){//it's a file
         file->occupied = false;
         write2(handle,file,sizeof(OPEN_RECORD));
-
+        return SUCCESS;
     }
    else
     return ERROR;
